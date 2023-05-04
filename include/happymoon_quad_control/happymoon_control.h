@@ -11,6 +11,10 @@
 #include <eigen3/Eigen/Dense>
 #include "geometry_eigen_conversions.h"
 #include "math_common.h"
+#include "mavros_msgs/msg/state.hpp"
+#include "mavros_msgs/srv/set_mode.hpp"
+#include "mavros_msgs/srv/command_bool.hpp"
+#include "mavros_msgs/msg/attitude_target.hpp"
 
 using namespace std;
 
@@ -93,6 +97,9 @@ namespace happymoon_control
 
   private:
     const rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odometry_sub_;
+
+    const rclcpp::Publisher<mavros_msgs::msg::AttitudeTarget>::SharedPtr angle_thrust_pub_;
+
     void ReadOdomData(const nav_msgs::msg::Odometry::SharedPtr msg);
 
     // params

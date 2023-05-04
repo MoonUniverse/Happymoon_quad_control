@@ -6,8 +6,10 @@ namespace happymoon_control
       : Node("happymoon_quad_control", options),
         // subscribe to odometry data
         odometry_sub_(create_subscription<nav_msgs::msg::Odometry>(
-            "visual_slam/tracking/odometry", rclcpp::QoS(10),
+            "/visual_slam/tracking/odometry", rclcpp::QoS(10),
             std::bind(&HappyMoonControl::ReadOdomData, this, std::placeholders::_1))),
+        angle_thrust_pub_(create_publisher<mavros_msgs::msg::AttitudeTarget>(
+            "/mavros/setpoint_raw/target_attitude", rclcpp::QoS(10))),
         happymoon_config{
             declare_parameter<double>("kpxy", 10.0),
             declare_parameter<double>("kdxy", 4.0),
