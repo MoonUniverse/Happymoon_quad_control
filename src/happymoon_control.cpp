@@ -8,6 +8,9 @@ namespace happymoon_control
         odometry_sub_(create_subscription<nav_msgs::msg::Odometry>(
             "/visual_slam/tracking/odometry", rclcpp::QoS(10),
             std::bind(&HappyMoonControl::ReadOdomData, this, std::placeholders::_1))),
+        state_sub_(create_subscription<mavros_msgs::msg::State>(
+            "/mavros/state", rclcpp::QoS(10),
+            std::bind(&HappyMoonControl::ReadPXState, this, std::placeholders::_1))),
         angle_thrust_pub_(create_publisher<mavros_msgs::msg::AttitudeTarget>(
             "/mavros/setpoint_raw/target_attitude", rclcpp::QoS(10))),
         happymoon_config{
@@ -60,6 +63,16 @@ namespace happymoon_control
         happymoon_reference, happymoon_state_estimate, happymoon_config);
     ControlRun(happymoon_state_estimate, happymoon_state_reference,
                happymoon_config);
+  }
+
+  void HappyMoonControl::ReadPXState(const mavros_msgs::msg::State::SharedPtr msg)
+  {
+    if (msg == nullptr)
+    {
+      RCLCPP_ERROR(this->get_logger(), "px4 state data is null.");
+      return;
+    }
+    current_px4_state = *msg;
   }
 
   QuadStateEstimateData HappyMoonControl::QuadStateEstimate(
@@ -137,39 +150,34 @@ namespace happymoon_control
     desired_r_p_y_rate.y = 0.5 * desired_r_p_y.y();
     desired_r_p_y_rate.z = 0.2 * desired_r_p_y.z();
 
-    //     mavros_msgs::AttitudeTarget expect_px;
+    mavros_msgs::msg::AttitudeTarget expect_px;
 
-    //     if (current_state.armed && current_state.mode == "OFFBOARD")
-    //     {
-    //       expect_px.header.frame_id = "base_link";
-    //       expect_px.header.stamp = ros::Time::now();
-    //       expect_px.type_mask = 7;
-    //       expect_px.orientation = geometryToEigen_.eigenToGeometry(desired_attitude);
-    //       expect_px.body_rate = desired_r_p_y_rate;
-    // #define simulation
-    // #ifdef simulation
-    //       expect_px.thrust = command.collective_thrust / config.k_thrust_horz;
-    //       ROS_ERROR("expect_px.thrust  :%f", expect_px.thrust);
-    // #endif
-
-    // // [0.13018744 0.12771589]
-    // // #define realquad
-    // #ifdef realquad
-    //       expect_px.thrust =
-    //           config.k_thrust_horz *
-    //           (0.13018744 * command.collective_thrust / 7.1 + 0.12771589);
-    //       ROS_ERROR("expect_px.thrust  :%f", expect_px.thrust);
-    // #endif
-    //     }
-    //     else
-    //     {
-    //       expect_px.header.frame_id = "base_link";
-    //       expect_px.header.stamp = ros::Time::now();
-    //       expect_px.orientation = geometryToEigen_.eigenToGeometry(desired_attitude);
-    //       expect_px.body_rate = desired_r_p_y_rate;
-    //       expect_px.thrust = 0;
-    //     }
-    //     ctrlExpectAngleThrustPX4.publish(expect_px);
+    if (current_px4_state.armed && current_px4_state.mode == "OFFBOARD")
+    {
+      expect_px.header.stamp  = rclcpp::Clock().now();
+      expect_px.header.frame_id = "base_link";
+      expect_px.type_mask = 7;
+      expect_px.orientation = geometryToEigen_.eigenToGeometry(desired_attitude);
+      expect_px.body_rate = desired_r_p_y_rate;
+    // [0.13018744 0.12771589]
+    #define realquad
+    #ifdef realquad
+          expect_px.thrust =
+              config.k_thrust_horz *
+              (0.13018744 * command.collective_thrust / 7.1 + 0.12771589);
+          RCLCPP_ERROR(this->get_logger(),"expect_px.thrust  :%f", expect_px.thrust);
+    #endif
+    }
+    else
+    {
+      expect_px.header.stamp  = rclcpp::Clock().now();
+      expect_px.header.frame_id = "base_link";
+      expect_px.type_mask = 7;
+      expect_px.orientation = geometryToEigen_.eigenToGeometry(desired_attitude);
+      expect_px.body_rate = desired_r_p_y_rate;
+      expect_px.thrust = 0;
+    }
+    angle_thrust_pub_->publish(expect_px);
   }
 
   Eigen::Vector3d HappyMoonControl::computePIDErrorAcc(
@@ -315,7 +323,6 @@ namespace happymoon_control
 
     return x_B;
   }
-
 
   bool HappyMoonControl::almostZero(const double value)
   {

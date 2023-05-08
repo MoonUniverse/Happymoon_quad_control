@@ -97,10 +97,12 @@ namespace happymoon_control
 
   private:
     const rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odometry_sub_;
+    const rclcpp::Subscription<mavros_msgs::msg::State>::SharedPtr state_sub_;
 
     const rclcpp::Publisher<mavros_msgs::msg::AttitudeTarget>::SharedPtr angle_thrust_pub_;
 
     void ReadOdomData(const nav_msgs::msg::Odometry::SharedPtr msg);
+    void ReadPXState(const mavros_msgs::msg::State::SharedPtr msg);
 
     // params
     HappymoonReference happymoon_reference;
@@ -147,6 +149,9 @@ namespace happymoon_control
     static constexpr double kMaxNormalizedCollectiveThrust_ = 15.0;
     static constexpr double kAlmostZeroValueThreshold_ = 0.001;
     static constexpr double kAlmostZeroThrustThreshold_ = 0.01;
+
+    // mavros msg
+    mavros_msgs::msg::State current_px4_state;
   };
 }
 
