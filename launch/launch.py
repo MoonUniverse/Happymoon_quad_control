@@ -4,18 +4,20 @@ from launch_ros.descriptions import ComposableNode
 
 
 def generate_launch_description():
-    """Launch file which brings up visual slam node configured for RealSense."""
-    static_tf_baselink_camera_link = Node(
-        name='tf_static',
-        package='tf2_ros',
-        executable='static_transform_publisher',
-        arguments = ['0.1', '0', '-0.05', '0', '0', '0', 'base_link', 'camera_link']
-    )
+    # """Launch file which brings up visual slam node configured for RealSense."""
+    # static_tf_baselink_camera_link = Node(
+    #     name='tf_static',
+    #     package='tf2_ros',
+    #     executable='static_transform_publisher',
+    #     arguments = ['0.1', '0', '-0.05', '0', '0', '0', 'base_link', 'camera_link']
+    # )
 
     happymoon_control = Node(
         name='happymoon_control',
         package='happymoon_quad_control',
         executable='happymoon_quad_control_node',
+        output='screen',
+        shell=True,
         parameters=[{
                     'kpxy': 3.0,
                     'kdxy': 3.0,
@@ -50,4 +52,4 @@ def generate_launch_description():
     )
 
 
-    return launch.LaunchDescription([happymoon_control,static_tf_baselink_camera_link])
+    return launch.LaunchDescription([happymoon_control])#,static_tf_baselink_camera_link

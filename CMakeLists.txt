@@ -14,7 +14,8 @@ ament_auto_find_build_dependencies()
 find_package(Eigen3 REQUIRED)
 include_directories(${EIGEN3_INCLUDE_DIR})
 
-find_package(mavros_msgs REQUIRED)
+find_package(px4_msgs REQUIRED)
+find_package(px4_ros_com REQUIRED)
 
 
 include_directories(

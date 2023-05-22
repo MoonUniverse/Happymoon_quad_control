@@ -8,11 +8,13 @@ namespace happymoon_control
         odometry_sub_(create_subscription<nav_msgs::msg::Odometry>(
             "/visual_slam/tracking/odometry", rclcpp::QoS(10),
             std::bind(&HappyMoonControl::ReadOdomData, this, std::placeholders::_1))),
-        state_sub_(create_subscription<mavros_msgs::msg::State>(
-            "/mavros/state", rclcpp::QoS(10),
+        px4_status_sub_(create_subscription<px4_msgs::msg::VehicleStatus>(
+            "/fmu/out/vehicle_status", rclcpp::QoS(rclcpp::QoSInitialization(qos_profile.history, 5), qos_profile),
             std::bind(&HappyMoonControl::ReadPXState, this, std::placeholders::_1))),
-        angle_thrust_pub_(create_publisher<mavros_msgs::msg::AttitudeTarget>(
-            "/mavros/setpoint_raw/target_attitude", rclcpp::QoS(10))),
+        offboard_control_mode_pub_(create_publisher<px4_msgs::msg::OffboardControlMode>(
+            "/fmu/in/offboard_control_mode", 10)),
+        vehicle_attitude_setpoint_pub_(create_publisher<px4_msgs::msg::VehicleAttitudeSetpoint>(
+            "/fmu/in/vehicle_attitude_setpoint", 10)),
         happymoon_config{
             declare_parameter<double>("kpxy", 10.0),
             declare_parameter<double>("kdxy", 4.0),
@@ -55,7 +57,9 @@ namespace happymoon_control
       RCLCPP_ERROR(this->get_logger(), "Odometry data is null.");
       return;
     }
-    RCLCPP_INFO(this->get_logger(), "Odometry data received.");
+    // publish 
+    publish_offboard_control_mode();
+    // RCLCPP_INFO(this->get_logger(), "Odometry data received.");
     QuadStateEstimateData happymoon_state_estimate;
     QuadStateReferenceData happymoon_state_reference;
     happymoon_state_estimate = QuadStateEstimate(*msg);
@@ -65,14 +69,20 @@ namespace happymoon_control
                happymoon_config);
   }
 
-  void HappyMoonControl::ReadPXState(const mavros_msgs::msg::State::SharedPtr msg)
+  void HappyMoonControl::ReadPXState(const px4_msgs::msg::VehicleStatus::SharedPtr msg)
   {
     if (msg == nullptr)
     {
       RCLCPP_ERROR(this->get_logger(), "px4 state data is null.");
       return;
     }
-    current_px4_state = *msg;
+    current_status = *msg;
+    // std::cout << "RECEIVED SENSOR COMBINED DATA"   << std::endl;
+    // std::cout << "============================="   << std::endl;
+
+    // std::cout << "current_status.arming_state:"    << msg->arming_state    << std::endl;
+		// std::cout << "current_status.nav_state:" << msg->nav_state  << std::endl;
+    
   }
 
   QuadStateEstimateData HappyMoonControl::QuadStateEstimate(
@@ -143,42 +153,46 @@ namespace happymoon_control
         computeDesiredAttitude(desired_acceleration, state_reference.heading,
                                state_estimate.orientation);
 
-    const Eigen::Vector3d desired_r_p_y =
-        mathcommon_.quaternionToEulerAnglesZYX(desired_attitude);
-    geometry_msgs::msg::Vector3 desired_r_p_y_rate;
-    desired_r_p_y_rate.x = 0.5 * desired_r_p_y.x();
-    desired_r_p_y_rate.y = 0.5 * desired_r_p_y.y();
-    desired_r_p_y_rate.z = 0.2 * desired_r_p_y.z();
+    // const Eigen::Vector3d desired_r_p_y =
+    //     mathcommon_.quaternionToEulerAnglesZYX(desired_attitude);
+    // geometry_msgs::msg::Vector3 desired_r_p_y_rate;
+    // desired_r_p_y_rate.x = 0.5 * desired_r_p_y.x();
+    // desired_r_p_y_rate.y = 0.5 * desired_r_p_y.y();
+    // desired_r_p_y_rate.z = 0.2 * desired_r_p_y.z();
 
-    mavros_msgs::msg::AttitudeTarget expect_px;
+    const Eigen::Quaterniond px4_desired_attitude =
+        px4_ros_com::frame_transforms::transform_orientation(desired_attitude,px4_ros_com::frame_transforms::StaticTF::ENU_TO_NED);
 
-    if (current_px4_state.armed && current_px4_state.mode == "OFFBOARD")
+    double roll,pitch,yaw;
+    px4_ros_com::frame_transforms::utils::quaternion::quaternion_to_euler(
+      px4_desired_attitude,roll,pitch,yaw
+    );
+
+    px4_msgs::msg::VehicleAttitudeSetpoint expect_px;
+    expect_px.timestamp = this->get_clock()->now().nanoseconds() / 1000;
+    expect_px.roll_body = roll;
+    expect_px.pitch_body = pitch;
+    expect_px.yaw_body = yaw;
+    expect_px.yaw_sp_move_rate = 0.2 * yaw;
+    px4_ros_com::frame_transforms::utils::quaternion::eigen_quat_to_array(desired_attitude,expect_px.q_d);
+    if (current_status.nav_state == 14 )//&& current_status.arming_state == 2
     {
-      expect_px.header.stamp  = rclcpp::Clock().now();
-      expect_px.header.frame_id = "base_link";
-      expect_px.type_mask = 7;
-      expect_px.orientation = geometryToEigen_.eigenToGeometry(desired_attitude);
-      expect_px.body_rate = desired_r_p_y_rate;
-    // [0.13018744 0.12771589]
-    #define realquad
-    #ifdef realquad
-          expect_px.thrust =
-              config.k_thrust_horz *
-              (0.13018744 * command.collective_thrust / 7.1 + 0.12771589);
-          RCLCPP_ERROR(this->get_logger(),"expect_px.thrust  :%f", expect_px.thrust);
-    #endif
+      expect_px.thrust_body[0] = 0;
+      expect_px.thrust_body[1] = 0;
+      expect_px.thrust_body[2] = config.k_thrust_horz *
+            (0.13018744 * command.collective_thrust / 7.1 + 0.12771589);
     }
     else
     {
-      expect_px.header.stamp  = rclcpp::Clock().now();
-      expect_px.header.frame_id = "base_link";
-      expect_px.type_mask = 7;
-      expect_px.orientation = geometryToEigen_.eigenToGeometry(desired_attitude);
-      expect_px.body_rate = desired_r_p_y_rate;
-      expect_px.thrust = 0;
+      expect_px.thrust_body[0] = 0;
+      expect_px.thrust_body[1] = 0;
+      expect_px.thrust_body[2] = 0;
     }
-    angle_thrust_pub_->publish(expect_px);
-  }
+    expect_px.reset_integral = false;
+    expect_px.fw_control_yaw_wheel = false;
+
+    vehicle_attitude_setpoint_pub_->publish(expect_px);
+}
 
   Eigen::Vector3d HappyMoonControl::computePIDErrorAcc(
       const QuadStateEstimateData &state_estimate,
@@ -332,6 +346,23 @@ namespace happymoon_control
   bool HappyMoonControl::almostZeroThrust(const double thrust_value)
   {
     return fabs(thrust_value) < kAlmostZeroThrustThreshold_;
+  }
+
+  /**
+   * @brief Publish the offboard control mode.
+   *        For this example, only position and altitude controls are active.
+   */
+  void HappyMoonControl::publish_offboard_control_mode()
+  {
+      px4_msgs::msg::OffboardControlMode msg{};
+      msg.position = false;
+      msg.velocity = false;
+      msg.acceleration = false;
+      msg.attitude = true;
+      msg.body_rate = false;
+      msg.actuator = false;
+      msg.timestamp = this->get_clock()->now().nanoseconds() / 1000;
+      offboard_control_mode_pub_->publish(msg);
   }
 
 }

@@ -11,10 +11,12 @@
 #include <eigen3/Eigen/Dense>
 #include "geometry_eigen_conversions.h"
 #include "math_common.h"
-#include "mavros_msgs/msg/state.hpp"
-#include "mavros_msgs/srv/set_mode.hpp"
-#include "mavros_msgs/srv/command_bool.hpp"
-#include "mavros_msgs/msg/attitude_target.hpp"
+#include <px4_msgs/msg/offboard_control_mode.hpp>
+#include <px4_msgs/msg/vehicle_attitude_setpoint.hpp>
+#include <px4_msgs/msg/vehicle_command.hpp>
+#include <px4_msgs/msg/vehicle_control_mode.hpp>
+#include <px4_msgs/msg/vehicle_status.hpp>
+#include <px4_ros_com/frame_transforms.h>
 
 using namespace std;
 
@@ -97,12 +99,12 @@ namespace happymoon_control
 
   private:
     const rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odometry_sub_;
-    const rclcpp::Subscription<mavros_msgs::msg::State>::SharedPtr state_sub_;
-
-    const rclcpp::Publisher<mavros_msgs::msg::AttitudeTarget>::SharedPtr angle_thrust_pub_;
-
+    const rclcpp::Subscription<px4_msgs::msg::VehicleStatus>::SharedPtr px4_status_sub_;
+    const rclcpp::Publisher<px4_msgs::msg::OffboardControlMode>::SharedPtr offboard_control_mode_pub_;
+    const rclcpp::Publisher<px4_msgs::msg::VehicleAttitudeSetpoint>::SharedPtr vehicle_attitude_setpoint_pub_;
+    
     void ReadOdomData(const nav_msgs::msg::Odometry::SharedPtr msg);
-    void ReadPXState(const mavros_msgs::msg::State::SharedPtr msg);
+    void ReadPXState(const px4_msgs::msg::VehicleStatus::SharedPtr msg);
 
     // params
     HappymoonReference happymoon_reference;
@@ -140,6 +142,8 @@ namespace happymoon_control
     bool almostZero(const double value);
     bool almostZeroThrust(const double thrust_value);
 
+    void publish_offboard_control_mode();
+
     GeometryEigenConversions geometryToEigen_;
     MathCommon mathcommon_;
 
@@ -150,8 +154,11 @@ namespace happymoon_control
     static constexpr double kAlmostZeroValueThreshold_ = 0.001;
     static constexpr double kAlmostZeroThrustThreshold_ = 0.01;
 
-    // mavros msg
-    mavros_msgs::msg::State current_px4_state;
+
+    px4_msgs::msg::VehicleStatus current_status;
+
+    rmw_qos_profile_t qos_profile = rmw_qos_profile_sensor_data;
+
   };
 }
 
