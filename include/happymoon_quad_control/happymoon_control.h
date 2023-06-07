@@ -102,6 +102,7 @@ namespace happymoon_control
     const rclcpp::Subscription<px4_msgs::msg::VehicleStatus>::SharedPtr px4_status_sub_;
     const rclcpp::Publisher<px4_msgs::msg::OffboardControlMode>::SharedPtr offboard_control_mode_pub_;
     const rclcpp::Publisher<px4_msgs::msg::VehicleAttitudeSetpoint>::SharedPtr vehicle_attitude_setpoint_pub_;
+    const rclcpp::Publisher<px4_msgs::msg::VehicleCommand>::SharedPtr vehicle_command_publisher_;
     
     void ReadOdomData(const nav_msgs::msg::Odometry::SharedPtr msg);
     void ReadPXState(const px4_msgs::msg::VehicleStatus::SharedPtr msg);
@@ -143,21 +144,28 @@ namespace happymoon_control
     bool almostZeroThrust(const double thrust_value);
 
     void publish_offboard_control_mode();
+    void publish_vehicle_command(uint16_t command, float param1 = 0.0, float param2 = 0.0);
+
+    void arm();
+    void disarm();
 
     GeometryEigenConversions geometryToEigen_;
     MathCommon mathcommon_;
 
     // Constants
     const Eigen::Vector3d kGravity_ = Eigen::Vector3d(0.0, 0.0, -9.81);
-    static constexpr double kMinNormalizedCollectiveThrust_ = 9.81;
+    static constexpr double kMinNormalizedCollectiveThrust_ = 8.81;
     static constexpr double kMaxNormalizedCollectiveThrust_ = 15.0;
     static constexpr double kAlmostZeroValueThreshold_ = 0.001;
     static constexpr double kAlmostZeroThrustThreshold_ = 0.01;
 
 
     px4_msgs::msg::VehicleStatus current_status;
+    px4_msgs::msg::VehicleStatus last_current_status;
 
     rmw_qos_profile_t qos_profile = rmw_qos_profile_sensor_data;
+
+    bool offboard_mode_start = false;
 
   };
 }

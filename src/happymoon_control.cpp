@@ -15,6 +15,8 @@ namespace happymoon_control
             "/fmu/in/offboard_control_mode", 10)),
         vehicle_attitude_setpoint_pub_(create_publisher<px4_msgs::msg::VehicleAttitudeSetpoint>(
             "/fmu/in/vehicle_attitude_setpoint", 10)),
+        vehicle_command_publisher_(create_publisher<px4_msgs::msg::VehicleCommand>(
+            "/fmu/in/vehicle_command", 10)),
         happymoon_config{
             declare_parameter<double>("kpxy", 10.0),
             declare_parameter<double>("kdxy", 4.0),
@@ -57,7 +59,7 @@ namespace happymoon_control
       RCLCPP_ERROR(this->get_logger(), "Odometry data is null.");
       return;
     }
-    // publish 
+    // publish
     publish_offboard_control_mode();
     // RCLCPP_INFO(this->get_logger(), "Odometry data received.");
     QuadStateEstimateData happymoon_state_estimate;
@@ -69,6 +71,26 @@ namespace happymoon_control
                happymoon_config);
   }
 
+  /**
+   * @brief Send a command to Arm the vehicle
+   */
+  void HappyMoonControl::arm()
+  {
+    publish_vehicle_command(px4_msgs::msg::VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM, 1.0);
+
+    RCLCPP_INFO(this->get_logger(), "Arm command send");
+  }
+
+  /**
+   * @brief Send a command to Disarm the vehicle
+   */
+  void HappyMoonControl::disarm()
+  {
+    publish_vehicle_command(px4_msgs::msg::VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM, 0.0);
+
+    RCLCPP_INFO(this->get_logger(), "Disarm command send");
+  }
+
   void HappyMoonControl::ReadPXState(const px4_msgs::msg::VehicleStatus::SharedPtr msg)
   {
     if (msg == nullptr)
@@ -77,12 +99,23 @@ namespace happymoon_control
       return;
     }
     current_status = *msg;
-    // std::cout << "RECEIVED SENSOR COMBINED DATA"   << std::endl;
-    // std::cout << "============================="   << std::endl;
+    if (last_current_status.nav_state != current_status.nav_state)
+    {
+      if (current_status.nav_state == 14 && !offboard_mode_start)
+      {
+        offboard_mode_start = true;
+        std::cout << "offboard_mode_start" << std::endl;
+        arm();
+      }
+      else if (current_status.nav_state == 15)
+      {
+        offboard_mode_start = false;
+        std::cout << "offboard_mode_end" << std::endl;
+        disarm();
+      }
+    }
 
-    // std::cout << "current_status.arming_state:"    << msg->arming_state    << std::endl;
-		// std::cout << "current_status.nav_state:" << msg->nav_state  << std::endl;
-    
+    last_current_status = current_status;
   }
 
   QuadStateEstimateData HappyMoonControl::QuadStateEstimate(
@@ -161,26 +194,26 @@ namespace happymoon_control
     // desired_r_p_y_rate.z = 0.2 * desired_r_p_y.z();
 
     const Eigen::Quaterniond px4_desired_attitude =
-        px4_ros_com::frame_transforms::transform_orientation(desired_attitude,px4_ros_com::frame_transforms::StaticTF::ENU_TO_NED);
+        px4_ros_com::frame_transforms::transform_orientation(desired_attitude, px4_ros_com::frame_transforms::StaticTF::ENU_TO_NED);
 
-    double roll,pitch,yaw;
+    double roll, pitch, yaw;
     px4_ros_com::frame_transforms::utils::quaternion::quaternion_to_euler(
-      px4_desired_attitude,roll,pitch,yaw
-    );
+        px4_desired_attitude, roll, pitch, yaw);
 
     px4_msgs::msg::VehicleAttitudeSetpoint expect_px;
     expect_px.timestamp = this->get_clock()->now().nanoseconds() / 1000;
-    expect_px.roll_body = roll;
-    expect_px.pitch_body = pitch;
-    expect_px.yaw_body = yaw;
-    expect_px.yaw_sp_move_rate = 0.2 * yaw;
-    px4_ros_com::frame_transforms::utils::quaternion::eigen_quat_to_array(desired_attitude,expect_px.q_d);
-    if (current_status.nav_state == 14 )//&& current_status.arming_state == 2
+    expect_px.roll_body = 0;
+    expect_px.pitch_body = 0;
+    expect_px.yaw_body = 0;
+    expect_px.yaw_sp_move_rate = 0;
+    px4_ros_com::frame_transforms::utils::quaternion::eigen_quat_to_array(desired_attitude, expect_px.q_d);
+    if (offboard_mode_start)
     {
+      std::cout << "command.collective_thrust " << command.collective_thrust <<std::endl;
       expect_px.thrust_body[0] = 0;
       expect_px.thrust_body[1] = 0;
-      expect_px.thrust_body[2] = config.k_thrust_horz *
-            (0.13018744 * command.collective_thrust / 7.1 + 0.12771589);
+      expect_px.thrust_body[2] = -config.k_thrust_horz *
+                                 (0.13018744 * command.collective_thrust / 7.1 + 0.12771589);
     }
     else
     {
@@ -192,7 +225,7 @@ namespace happymoon_control
     expect_px.fw_control_yaw_wheel = false;
 
     vehicle_attitude_setpoint_pub_->publish(expect_px);
-}
+  }
 
   Eigen::Vector3d HappyMoonControl::computePIDErrorAcc(
       const QuadStateEstimateData &state_estimate,
@@ -354,15 +387,36 @@ namespace happymoon_control
    */
   void HappyMoonControl::publish_offboard_control_mode()
   {
-      px4_msgs::msg::OffboardControlMode msg{};
-      msg.position = false;
-      msg.velocity = false;
-      msg.acceleration = false;
-      msg.attitude = true;
-      msg.body_rate = false;
-      msg.actuator = false;
-      msg.timestamp = this->get_clock()->now().nanoseconds() / 1000;
-      offboard_control_mode_pub_->publish(msg);
+    px4_msgs::msg::OffboardControlMode msg{};
+    msg.position = false;
+    msg.velocity = false;
+    msg.acceleration = false;
+    msg.attitude = true;
+    msg.body_rate = false;
+    msg.actuator = false;
+    msg.timestamp = this->get_clock()->now().nanoseconds() / 1000;
+    offboard_control_mode_pub_->publish(msg);
+  }
+
+  /**
+   * @brief Publish vehicle commands
+   * @param command   Command code (matches VehicleCommand and MAVLink MAV_CMD codes)
+   * @param param1    Command parameter 1
+   * @param param2    Command parameter 2
+   */
+  void HappyMoonControl::publish_vehicle_command(uint16_t command, float param1, float param2)
+  {
+    px4_msgs::msg::VehicleCommand msg{};
+    msg.param1 = param1;
+    msg.param2 = param2;
+    msg.command = command;
+    msg.target_system = 1;
+    msg.target_component = 1;
+    msg.source_system = 1;
+    msg.source_component = 1;
+    msg.from_external = true;
+    msg.timestamp = this->get_clock()->now().nanoseconds() / 1000;
+    vehicle_command_publisher_->publish(msg);
   }
 
 }
