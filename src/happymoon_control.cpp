@@ -44,6 +44,12 @@ namespace happymoon_control
 
             declare_parameter<double>("k_thrust_horz", 1.0)}
   {
+    happymoon_reference.position.x() = declare_parameter<double>("ref_pos_x", 0.0);
+    happymoon_reference.position.y() = declare_parameter<double>("ref_pos_y", 0.0);
+    happymoon_reference.position.z() = declare_parameter<double>("ref_pos_z", 1.0);
+    happymoon_reference.heading = declare_parameter<double>("ref_head", 0.0);
+    happymoon_reference.heading_rate = declare_parameter<double>("ref_head_rate", 0.0);
+
     RCLCPP_INFO(this->get_logger(), "HappyMoonControl Node has been initialized.");
   }
 
@@ -209,7 +215,7 @@ namespace happymoon_control
     px4_ros_com::frame_transforms::utils::quaternion::eigen_quat_to_array(desired_attitude, expect_px.q_d);
     if (offboard_mode_start)
     {
-      std::cout << "command.collective_thrust " << command.collective_thrust <<std::endl;
+      std::cout << "command.collective_thrust " << command.collective_thrust << std::endl;
       expect_px.thrust_body[0] = 0;
       expect_px.thrust_body[1] = 0;
       expect_px.thrust_body[2] = -config.k_thrust_horz *
