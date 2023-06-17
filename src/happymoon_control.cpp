@@ -17,6 +17,9 @@ namespace happymoon_control
             "/fmu/in/vehicle_attitude_setpoint", 10)),
         vehicle_command_publisher_(create_publisher<px4_msgs::msg::VehicleCommand>(
             "/fmu/in/vehicle_command", 10)),
+        vehicle_vio_publisher_(create_publisher<px4_msgs::msg::VehicleOdometry>(
+            "/fmu/in/vehicle_command", 10)
+        ),
         happymoon_config{
             declare_parameter<double>("kpxy", 10.0),
             declare_parameter<double>("kdxy", 4.0),
@@ -44,6 +47,12 @@ namespace happymoon_control
 
             declare_parameter<double>("k_thrust_horz", 1.0)}
   {
+    happymoon_reference.position.x() = declare_parameter<double>("ref_pos_x", 0.0);
+    happymoon_reference.position.y() = declare_parameter<double>("ref_pos_y", 0.0);
+    happymoon_reference.position.z() = declare_parameter<double>("ref_pos_z", 1.0);
+    happymoon_reference.heading = declare_parameter<double>("ref_head", 0.0);
+    happymoon_reference.heading_rate = declare_parameter<double>("ref_head_rate", 0.0);
+
     RCLCPP_INFO(this->get_logger(), "HappyMoonControl Node has been initialized.");
   }
 
@@ -61,6 +70,7 @@ namespace happymoon_control
     }
     // publish
     publish_offboard_control_mode();
+    publish_visual_inertial_odom(*msg);
     // RCLCPP_INFO(this->get_logger(), "Odometry data received.");
     QuadStateEstimateData happymoon_state_estimate;
     QuadStateReferenceData happymoon_state_reference;
@@ -194,7 +204,7 @@ namespace happymoon_control
     // desired_r_p_y_rate.z = 0.2 * desired_r_p_y.z();
 
     const Eigen::Quaterniond px4_desired_attitude =
-        px4_ros_com::frame_transforms::transform_orientation(desired_attitude, px4_ros_com::frame_transforms::StaticTF::ENU_TO_NED);
+        px4_ros_com::frame_transforms::transform_orientation(desired_attitude, px4_ros_com::frame_transforms::StaticTF::BASELINK_TO_AIRCRAFT);
 
     double roll, pitch, yaw;
     px4_ros_com::frame_transforms::utils::quaternion::quaternion_to_euler(
@@ -209,7 +219,7 @@ namespace happymoon_control
     px4_ros_com::frame_transforms::utils::quaternion::eigen_quat_to_array(desired_attitude, expect_px.q_d);
     if (offboard_mode_start)
     {
-      std::cout << "command.collective_thrust " << command.collective_thrust <<std::endl;
+      std::cout << "command.collective_thrust " << command.collective_thrust << std::endl;
       expect_px.thrust_body[0] = 0;
       expect_px.thrust_body[1] = 0;
       expect_px.thrust_body[2] = -config.k_thrust_horz *
@@ -417,6 +427,41 @@ namespace happymoon_control
     msg.from_external = true;
     msg.timestamp = this->get_clock()->now().nanoseconds() / 1000;
     vehicle_command_publisher_->publish(msg);
+  }
+
+  void HappyMoonControl::publish_visual_inertial_odom(nav_msgs::msg::Odometry odom)
+  {
+    px4_msgs::msg::VehicleOdometry msg{};
+    Eigen::Quaterniond ros_quad = Eigen::Quaterniond(odom.pose.pose.orientation.w, odom.pose.pose.orientation.x, odom.pose.pose.orientation.y, odom.pose.pose.orientation.z);
+    Eigen::Quaterniond px4_quad = px4_ros_com::frame_transforms::transform_orientation(ros_quad, px4_ros_com::frame_transforms::StaticTF::BASELINK_TO_AIRCRAFT);
+    
+    Eigen::Vector3d ros_pos = Eigen::Vector3d(odom.pose.pose.position.x, odom.pose.pose.position.y, odom.pose.pose.position.z);
+    Eigen::Vector3d px4_pos = px4_ros_com::frame_transforms::transform_static_frame(ros_pos, px4_ros_com::frame_transforms::StaticTF::BASELINK_TO_AIRCRAFT);
+    
+    Eigen::Vector3d ros_vel = Eigen::Vector3d(odom.twist.twist.linear.x, odom.twist.twist.linear.y, odom.twist.twist.linear.z);
+    Eigen::Vector3d px4_vel = px4_ros_com::frame_transforms::transform_static_frame(ros_vel, px4_ros_com::frame_transforms::StaticTF::BASELINK_TO_AIRCRAFT);
+
+    Eigen::Vector3d ros_ang_vel = Eigen::Vector3d(odom.twist.twist.angular.x, odom.twist.twist.angular.y, odom.twist.twist.angular.z);
+    Eigen::Vector3d px4_ang_vel = px4_ros_com::frame_transforms::transform_static_frame(ros_ang_vel, px4_ros_com::frame_transforms::StaticTF::BASELINK_TO_AIRCRAFT);
+
+    msg.timestamp = odom.header.stamp.nanosec/1000;
+    msg.timestamp_sample = odom.header.stamp.nanosec/1000;
+    msg.pose_frame = 2;
+    msg.position[0] = px4_pos[0];
+    msg.position[1] = px4_pos[1];
+    msg.position[2] = px4_pos[2];
+    msg.q[0] = px4_quad.w();
+    msg.q[1] = px4_quad.x();
+    msg.q[2] = px4_quad.y();
+    msg.q[3] = px4_quad.z();
+    msg.velocity_frame = 2;
+    msg.velocity[0] = px4_vel[0];
+    msg.velocity[1] = px4_vel[1];
+    msg.velocity[2] = px4_vel[2];
+    msg.angular_velocity[0] = px4_ang_vel[0];
+    msg.angular_velocity[1] = px4_ang_vel[1];
+    msg.angular_velocity[2] = px4_ang_vel[2];
+    vehicle_vio_publisher_->publish(msg);
   }
 
 }

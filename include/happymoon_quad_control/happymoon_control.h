@@ -17,7 +17,7 @@
 #include <px4_msgs/msg/vehicle_control_mode.hpp>
 #include <px4_msgs/msg/vehicle_status.hpp>
 #include <px4_ros_com/frame_transforms.h>
-
+#include <px4_msgs/msg/vehicle_odometry.hpp>
 using namespace std;
 
 struct QuadStateEstimateData
@@ -103,9 +103,11 @@ namespace happymoon_control
     const rclcpp::Publisher<px4_msgs::msg::OffboardControlMode>::SharedPtr offboard_control_mode_pub_;
     const rclcpp::Publisher<px4_msgs::msg::VehicleAttitudeSetpoint>::SharedPtr vehicle_attitude_setpoint_pub_;
     const rclcpp::Publisher<px4_msgs::msg::VehicleCommand>::SharedPtr vehicle_command_publisher_;
+    const rclcpp::Publisher<px4_msgs::msg::VehicleOdometry>::SharedPtr vehicle_vio_publisher_;
     
     void ReadOdomData(const nav_msgs::msg::Odometry::SharedPtr msg);
     void ReadPXState(const px4_msgs::msg::VehicleStatus::SharedPtr msg);
+    void publish_visual_inertial_odom(nav_msgs::msg::Odometry odom);
 
     // params
     HappymoonReference happymoon_reference;
