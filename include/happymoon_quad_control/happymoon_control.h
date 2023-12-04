@@ -169,6 +169,8 @@ namespace happymoon_control
 
     bool offboard_mode_start = false;
 
+    rclcpp::Time time_now;
+
   };
 }
 

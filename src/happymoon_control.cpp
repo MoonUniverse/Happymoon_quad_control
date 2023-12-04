@@ -18,7 +18,7 @@ namespace happymoon_control
         vehicle_command_publisher_(create_publisher<px4_msgs::msg::VehicleCommand>(
             "/fmu/in/vehicle_command", 10)),
         vehicle_vio_publisher_(create_publisher<px4_msgs::msg::VehicleOdometry>(
-            "/fmu/in/vehicle_command", 10)
+            "/fmu/in/vehicle_visual_odometry", 10)
         ),
         happymoon_config{
             declare_parameter<double>("kpxy", 10.0),
@@ -45,7 +45,8 @@ namespace happymoon_control
             declare_parameter<double>("k_drag_y", 0.0),
             declare_parameter<double>("k_drag_z", 0.0),
 
-            declare_parameter<double>("k_thrust_horz", 1.0)}
+            declare_parameter<double>("k_thrust_horz", 1.0)},
+        time_now(this->get_clock()->now())
   {
     happymoon_reference.position.x() = declare_parameter<double>("ref_pos_x", 0.0);
     happymoon_reference.position.y() = declare_parameter<double>("ref_pos_y", 0.0);
@@ -69,16 +70,19 @@ namespace happymoon_control
       return;
     }
     // publish
-    publish_offboard_control_mode();
+    // publish_offboard_control_mode();
     publish_visual_inertial_odom(*msg);
-    // RCLCPP_INFO(this->get_logger(), "Odometry data received.");
-    QuadStateEstimateData happymoon_state_estimate;
-    QuadStateReferenceData happymoon_state_reference;
-    happymoon_state_estimate = QuadStateEstimate(*msg);
-    happymoon_state_reference = QuadReferenceState(
-        happymoon_reference, happymoon_state_estimate, happymoon_config);
-    ControlRun(happymoon_state_estimate, happymoon_state_reference,
-               happymoon_config);
+    RCLCPP_INFO(this->get_logger(), "Odometry data received.");
+    // RCLCPP_INFO this->get_clock()->now() - time_now;
+    RCLCPP_INFO(this->get_logger(), "time gap: %ld", this->get_clock()->now().nanoseconds() / 1000 - time_now.nanoseconds() / 1000);
+    time_now = this->get_clock()->now();
+    // QuadStateEstimateData happymoon_state_estimate;
+    // QuadStateReferenceData happymoon_state_reference;
+    // happymoon_state_estimate = QuadStateEstimate(*msg);
+    // happymoon_state_reference = QuadReferenceState(
+    //     happymoon_reference, happymoon_state_estimate, happymoon_config);
+    // ControlRun(happymoon_state_estimate, happymoon_state_reference,
+    //            happymoon_config);
   }
 
   /**
@@ -403,7 +407,7 @@ namespace happymoon_control
     msg.acceleration = false;
     msg.attitude = true;
     msg.body_rate = false;
-    msg.actuator = false;
+    // msg.actuator = false;
     msg.timestamp = this->get_clock()->now().nanoseconds() / 1000;
     offboard_control_mode_pub_->publish(msg);
   }
