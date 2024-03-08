@@ -4,22 +4,16 @@ namespace happymoon_control
 {
   HappyMoonControl::HappyMoonControl(rclcpp::NodeOptions options)
       : Node("happymoon_quad_control", options),
-        // subscribe to odometry data
-        odometry_sub_(create_subscription<nav_msgs::msg::Odometry>(
-            "/visual_slam/tracking/odometry", rclcpp::QoS(10),
-            std::bind(&HappyMoonControl::ReadOdomData, this, std::placeholders::_1))),
+        // subscribe
         px4_status_sub_(create_subscription<px4_msgs::msg::VehicleStatus>(
             "/fmu/out/vehicle_status", rclcpp::QoS(rclcpp::QoSInitialization(qos_profile.history, 5), qos_profile),
             std::bind(&HappyMoonControl::ReadPXState, this, std::placeholders::_1))),
         offboard_control_mode_pub_(create_publisher<px4_msgs::msg::OffboardControlMode>(
             "/fmu/in/offboard_control_mode", 10)),
-        vehicle_attitude_setpoint_pub_(create_publisher<px4_msgs::msg::VehicleAttitudeSetpoint>(
-            "/fmu/in/vehicle_attitude_setpoint", 10)),
-        vehicle_command_publisher_(create_publisher<px4_msgs::msg::VehicleCommand>(
+        vehicle_command_pub_(create_publisher<px4_msgs::msg::VehicleCommand>(
             "/fmu/in/vehicle_command", 10)),
-        vehicle_vio_publisher_(create_publisher<px4_msgs::msg::VehicleOdometry>(
-            "/fmu/in/vehicle_visual_odometry", 10)
-        ),
+        trajectory_setpoint_pub_(create_publisher<px4_msgs::msg::TrajectorySetpoint>(
+            "/fmu/in/trajectory_setpoint", 10)),
         happymoon_config{
             declare_parameter<double>("kpxy", 10.0),
             declare_parameter<double>("kdxy", 4.0),
@@ -60,49 +54,6 @@ namespace happymoon_control
   HappyMoonControl::~HappyMoonControl()
   {
     RCLCPP_INFO(this->get_logger(), "HappyMoonControl Node has been destroyed.");
-  }
-
-  void HappyMoonControl::ReadOdomData(const nav_msgs::msg::Odometry::SharedPtr msg)
-  {
-    if (msg == nullptr)
-    {
-      RCLCPP_ERROR(this->get_logger(), "Odometry data is null.");
-      return;
-    }
-    // publish
-    // publish_offboard_control_mode();
-    publish_visual_inertial_odom(*msg);
-    RCLCPP_INFO(this->get_logger(), "Odometry data received.");
-    // RCLCPP_INFO this->get_clock()->now() - time_now;
-    RCLCPP_INFO(this->get_logger(), "time gap: %ld", this->get_clock()->now().nanoseconds() / 1000 - time_now.nanoseconds() / 1000);
-    time_now = this->get_clock()->now();
-    // QuadStateEstimateData happymoon_state_estimate;
-    // QuadStateReferenceData happymoon_state_reference;
-    // happymoon_state_estimate = QuadStateEstimate(*msg);
-    // happymoon_state_reference = QuadReferenceState(
-    //     happymoon_reference, happymoon_state_estimate, happymoon_config);
-    // ControlRun(happymoon_state_estimate, happymoon_state_reference,
-    //            happymoon_config);
-  }
-
-  /**
-   * @brief Send a command to Arm the vehicle
-   */
-  void HappyMoonControl::arm()
-  {
-    publish_vehicle_command(px4_msgs::msg::VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM, 1.0);
-
-    RCLCPP_INFO(this->get_logger(), "Arm command send");
-  }
-
-  /**
-   * @brief Send a command to Disarm the vehicle
-   */
-  void HappyMoonControl::disarm()
-  {
-    publish_vehicle_command(px4_msgs::msg::VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM, 0.0);
-
-    RCLCPP_INFO(this->get_logger(), "Disarm command send");
   }
 
   void HappyMoonControl::ReadPXState(const px4_msgs::msg::VehicleStatus::SharedPtr msg)
@@ -199,46 +150,6 @@ namespace happymoon_control
     const Eigen::Quaterniond desired_attitude =
         computeDesiredAttitude(desired_acceleration, state_reference.heading,
                                state_estimate.orientation);
-
-    // const Eigen::Vector3d desired_r_p_y =
-    //     mathcommon_.quaternionToEulerAnglesZYX(desired_attitude);
-    // geometry_msgs::msg::Vector3 desired_r_p_y_rate;
-    // desired_r_p_y_rate.x = 0.5 * desired_r_p_y.x();
-    // desired_r_p_y_rate.y = 0.5 * desired_r_p_y.y();
-    // desired_r_p_y_rate.z = 0.2 * desired_r_p_y.z();
-
-    const Eigen::Quaterniond px4_desired_attitude =
-        px4_ros_com::frame_transforms::transform_orientation(desired_attitude, px4_ros_com::frame_transforms::StaticTF::BASELINK_TO_AIRCRAFT);
-
-    double roll, pitch, yaw;
-    px4_ros_com::frame_transforms::utils::quaternion::quaternion_to_euler(
-        px4_desired_attitude, roll, pitch, yaw);
-
-    px4_msgs::msg::VehicleAttitudeSetpoint expect_px;
-    expect_px.timestamp = this->get_clock()->now().nanoseconds() / 1000;
-    expect_px.roll_body = 0;
-    expect_px.pitch_body = 0;
-    expect_px.yaw_body = 0;
-    expect_px.yaw_sp_move_rate = 0;
-    px4_ros_com::frame_transforms::utils::quaternion::eigen_quat_to_array(desired_attitude, expect_px.q_d);
-    if (offboard_mode_start)
-    {
-      std::cout << "command.collective_thrust " << command.collective_thrust << std::endl;
-      expect_px.thrust_body[0] = 0;
-      expect_px.thrust_body[1] = 0;
-      expect_px.thrust_body[2] = -config.k_thrust_horz *
-                                 (0.13018744 * command.collective_thrust / 7.1 + 0.12771589);
-    }
-    else
-    {
-      expect_px.thrust_body[0] = 0;
-      expect_px.thrust_body[1] = 0;
-      expect_px.thrust_body[2] = 0;
-    }
-    expect_px.reset_integral = false;
-    expect_px.fw_control_yaw_wheel = false;
-
-    vehicle_attitude_setpoint_pub_->publish(expect_px);
   }
 
   Eigen::Vector3d HappyMoonControl::computePIDErrorAcc(
@@ -430,42 +341,27 @@ namespace happymoon_control
     msg.source_component = 1;
     msg.from_external = true;
     msg.timestamp = this->get_clock()->now().nanoseconds() / 1000;
-    vehicle_command_publisher_->publish(msg);
+    vehicle_command_pub_->publish(msg);
   }
 
-  void HappyMoonControl::publish_visual_inertial_odom(nav_msgs::msg::Odometry odom)
+  /**
+   * @brief Send a command to Arm the vehicle
+   */
+  void HappyMoonControl::arm()
   {
-    px4_msgs::msg::VehicleOdometry msg{};
-    Eigen::Quaterniond ros_quad = Eigen::Quaterniond(odom.pose.pose.orientation.w, odom.pose.pose.orientation.x, odom.pose.pose.orientation.y, odom.pose.pose.orientation.z);
-    Eigen::Quaterniond px4_quad = px4_ros_com::frame_transforms::transform_orientation(ros_quad, px4_ros_com::frame_transforms::StaticTF::BASELINK_TO_AIRCRAFT);
-    
-    Eigen::Vector3d ros_pos = Eigen::Vector3d(odom.pose.pose.position.x, odom.pose.pose.position.y, odom.pose.pose.position.z);
-    Eigen::Vector3d px4_pos = px4_ros_com::frame_transforms::transform_static_frame(ros_pos, px4_ros_com::frame_transforms::StaticTF::BASELINK_TO_AIRCRAFT);
-    
-    Eigen::Vector3d ros_vel = Eigen::Vector3d(odom.twist.twist.linear.x, odom.twist.twist.linear.y, odom.twist.twist.linear.z);
-    Eigen::Vector3d px4_vel = px4_ros_com::frame_transforms::transform_static_frame(ros_vel, px4_ros_com::frame_transforms::StaticTF::BASELINK_TO_AIRCRAFT);
+    publish_vehicle_command(px4_msgs::msg::VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM, 1.0);
 
-    Eigen::Vector3d ros_ang_vel = Eigen::Vector3d(odom.twist.twist.angular.x, odom.twist.twist.angular.y, odom.twist.twist.angular.z);
-    Eigen::Vector3d px4_ang_vel = px4_ros_com::frame_transforms::transform_static_frame(ros_ang_vel, px4_ros_com::frame_transforms::StaticTF::BASELINK_TO_AIRCRAFT);
+    RCLCPP_INFO(this->get_logger(), "Arm command send");
+  }
 
-    msg.timestamp = odom.header.stamp.nanosec/1000;
-    msg.timestamp_sample = odom.header.stamp.nanosec/1000;
-    msg.pose_frame = 2;
-    msg.position[0] = px4_pos[0];
-    msg.position[1] = px4_pos[1];
-    msg.position[2] = px4_pos[2];
-    msg.q[0] = px4_quad.w();
-    msg.q[1] = px4_quad.x();
-    msg.q[2] = px4_quad.y();
-    msg.q[3] = px4_quad.z();
-    msg.velocity_frame = 2;
-    msg.velocity[0] = px4_vel[0];
-    msg.velocity[1] = px4_vel[1];
-    msg.velocity[2] = px4_vel[2];
-    msg.angular_velocity[0] = px4_ang_vel[0];
-    msg.angular_velocity[1] = px4_ang_vel[1];
-    msg.angular_velocity[2] = px4_ang_vel[2];
-    vehicle_vio_publisher_->publish(msg);
+  /**
+   * @brief Send a command to Disarm the vehicle
+   */
+  void HappyMoonControl::disarm()
+  {
+    publish_vehicle_command(px4_msgs::msg::VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM, 0.0);
+
+    RCLCPP_INFO(this->get_logger(), "Disarm command send");
   }
 
 }

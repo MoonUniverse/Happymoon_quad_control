@@ -8,16 +8,19 @@
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_action/rclcpp_action.hpp"
 #include "nav_msgs/msg/odometry.hpp"
+#include "geometry_msgs/msg/pose_stamped.hpp"
 #include <eigen3/Eigen/Dense>
 #include "geometry_eigen_conversions.h"
 #include "math_common.h"
 #include <px4_msgs/msg/offboard_control_mode.hpp>
 #include <px4_msgs/msg/vehicle_attitude_setpoint.hpp>
+#include <px4_msgs/msg/trajectory_setpoint.hpp>
 #include <px4_msgs/msg/vehicle_command.hpp>
 #include <px4_msgs/msg/vehicle_control_mode.hpp>
 #include <px4_msgs/msg/vehicle_status.hpp>
-#include <px4_ros_com/frame_transforms.h>
 #include <px4_msgs/msg/vehicle_odometry.hpp>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
+#include <tf2/LinearMath/Matrix3x3.h>
 using namespace std;
 
 struct QuadStateEstimateData
@@ -98,16 +101,11 @@ namespace happymoon_control
     virtual ~HappyMoonControl();
 
   private:
-    const rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odometry_sub_;
     const rclcpp::Subscription<px4_msgs::msg::VehicleStatus>::SharedPtr px4_status_sub_;
+    const rclcpp::Publisher<px4_msgs::msg::TrajectorySetpoint>::SharedPtr trajectory_setpoint_pub_;
     const rclcpp::Publisher<px4_msgs::msg::OffboardControlMode>::SharedPtr offboard_control_mode_pub_;
-    const rclcpp::Publisher<px4_msgs::msg::VehicleAttitudeSetpoint>::SharedPtr vehicle_attitude_setpoint_pub_;
-    const rclcpp::Publisher<px4_msgs::msg::VehicleCommand>::SharedPtr vehicle_command_publisher_;
-    const rclcpp::Publisher<px4_msgs::msg::VehicleOdometry>::SharedPtr vehicle_vio_publisher_;
-    
-    void ReadOdomData(const nav_msgs::msg::Odometry::SharedPtr msg);
+    const rclcpp::Publisher<px4_msgs::msg::VehicleCommand>::SharedPtr vehicle_command_pub_;
     void ReadPXState(const px4_msgs::msg::VehicleStatus::SharedPtr msg);
-    void publish_visual_inertial_odom(nav_msgs::msg::Odometry odom);
 
     // params
     HappymoonReference happymoon_reference;
